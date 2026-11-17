@@ -42,6 +42,10 @@ Each channel has two properties: `EngineeringUnits` (when a unit is set) and
 
 NodeIds are `ns=2;s=Diag.<Name>`, for example `ns=2;s=Diag.FreeHeap`.
 
+The Device folder also holds about 25 further nodes (`Retransmit*`, `Timer*`,
+`Socket*`, `HandshakeRefused`, ...). They are internal diagnostics used by the
+test tools in `tools/`, and their names may change between releases.
+
 ## Server limits
 
 | Item | RP2350 | RP2040 |

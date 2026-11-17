@@ -84,12 +84,15 @@ No UART adapter is needed: the quick start sends values over the USB console.
    [Releases](https://github.com/theoim/WIZnet_OPCUA_Node/releases).
 2. Hold the **BOOTSEL** button and plug in the USB cable. A drive appears on the PC.
 3. Drag the `.uf2` file onto the drive. The board restarts by itself.
-4. Open the board's COM port in the terminal. The boot log starts with:
+4. Open the board's COM port in the terminal and type `OPCUA`. The board answers:
 
 ```
-=== WIZnet OPC UA Node (Phase A) ===
-build <commit> <time>  security=...
+[OPC UA] state=RUNNING network=on endpoint=opc.tcp://192.168.11.2:4840 channels=3
 ```
+
+`state=RUNNING` means the server is up. The boot messages themselves are
+usually gone by then: the USB console only shows what the board prints after
+the terminal opens, so check with a command instead.
 
 > **Turn on local echo and send CR+LF.** The board treats CR or LF as the end
 > of a command and does not echo what you type. Without these settings, your

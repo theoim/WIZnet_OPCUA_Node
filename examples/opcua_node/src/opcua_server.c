@@ -144,7 +144,7 @@ static UA_StatusCode configure_server_identity(UA_ServerConfig *config) {
     res = copy_string_to_config(&config->buildInfo.productName,
                                 "WIZnet OPC UA Node (RP2350/W6300)");
     if(res != UA_STATUSCODE_GOOD) return res;
-    res = copy_string_to_config(&config->buildInfo.softwareVersion, "0.2.0-A");
+    res = copy_string_to_config(&config->buildInfo.softwareVersion, OPCUA_FW_VERSION);
     if(res != UA_STATUSCODE_GOOD) return res;
     config->buildInfo.buildDate = UA_DateTime_now();
 
@@ -247,7 +247,7 @@ static UA_StatusCode read_diag(uint16_t kind, UA_DataValue *value,
         return emit_string(value, ip, ts);
     }
     case OPCUA_DIAG_FW_VERSION:
-        return emit_string(value, "opcua-node-0.2.0-A", ts);
+        return emit_string(value, OPCUA_FW_VERSION, ts);
     case OPCUA_DIAG_UPTIME_S: {
         UA_UInt32 up = (UA_UInt32)(to_ms_since_boot(get_absolute_time()) / 1000u);
         return emit_scalar(value, &up, &UA_TYPES[UA_TYPES_UINT32], ts);

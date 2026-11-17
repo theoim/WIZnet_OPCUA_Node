@@ -41,6 +41,9 @@ Objects
 
 NodeId는 `ns=2;s=Diag.<이름>` 형식입니다. 예: `ns=2;s=Diag.FreeHeap`.
 
+Device 폴더에는 이 밖에도 약 25개 노드(`Retransmit*`, `Timer*`, `Socket*`, `HandshakeRefused` 등)가
+있습니다. `tools/`의 시험 도구가 쓰는 내부 진단 값이며, 릴리스마다 이름이 바뀔 수 있습니다.
+
 ## 서버 한도
 
 | 항목 | RP2350 | RP2040 |

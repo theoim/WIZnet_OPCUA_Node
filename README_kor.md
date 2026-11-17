@@ -78,12 +78,14 @@ UART 어댑터는 필요 없습니다. 빠른 시작에서는 USB 콘솔로 값�
 1. [Releases](https://github.com/theoim/WIZnet_OPCUA_Node/releases)에서 보드에 맞는 `.uf2` 파일을 받습니다.
 2. **BOOTSEL** 버튼을 누른 채 USB 케이블을 꽂습니다. PC에 드라이브가 나타납니다.
 3. `.uf2` 파일을 드라이브에 끌어 놓습니다. 보드가 스스로 다시 시작합니다.
-4. 터미널에서 보드의 COM 포트를 엽니다. 부팅 로그는 다음과 같이 시작합니다.
+4. 터미널에서 보드의 COM 포트를 열고 `OPCUA`를 입력합니다. 보드가 다음과 같이 답합니다.
 
 ```
-=== WIZnet OPC UA Node (Phase A) ===
-build <commit> <time>  security=...
+[OPC UA] state=RUNNING network=on endpoint=opc.tcp://192.168.11.2:4840 channels=3
 ```
+
+`state=RUNNING`이면 서버가 동작 중입니다. 부팅 메시지는 보통 이미 지나간 뒤입니다. USB 콘솔은
+터미널을 연 뒤에 보드가 출력한 내용만 보여 주기 때문입니다. 그래서 명령으로 확인합니다.
 
 > **로컬 에코와 CR+LF 전송을 켜 주세요.** 보드는 CR이나 LF를 명령의 끝으로 보고, 입력한
 > 글자를 되돌려 보내지 않습니다. 이 설정이 없으면 입력이 화면에 보이지 않고 명령도 실행되지

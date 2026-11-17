@@ -53,7 +53,7 @@ int main(void) {
     data_table_init(&g_settings);
     usb_stdio_link_init(&g_settings);
 
-    printf("\r\n=== WIZnet OPC UA Node (Phase A) ===\r\n");
+    printf("\r\n=== WIZnet OPC UA Node " OPCUA_FW_VERSION " ===\r\n");
 
     /* Which image is running.
      *
