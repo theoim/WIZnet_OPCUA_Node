@@ -1,0 +1,46 @@
+/*
+ * Copyright (c) 2026 WIZnet Co., Ltd.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef WIZNET_NETWORK_H
+#define WIZNET_NETWORK_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "opcua_settings.h"
+
+#define WIZNET_OPCUA_TCP_PORT 4840u
+
+typedef enum {
+    WIZNET_NETWORK_STATE_DISABLED = 0,
+    WIZNET_NETWORK_STATE_INIT,
+    WIZNET_NETWORK_STATE_LINK_DOWN,
+    WIZNET_NETWORK_STATE_LINK_UP,
+    WIZNET_NETWORK_STATE_ERROR
+} WiznetNetworkState;
+
+typedef struct {
+    WiznetNetworkState state;
+    bool initialized;
+    bool link_up;
+    uint8_t mac[6];
+    uint8_t ip[4];
+    uint8_t subnet[4];
+    uint8_t gateway[4];
+    const char *status_text;
+} WiznetNetworkStatus;
+
+int wiznet_network_init(const opcua_settings_t *cfg);
+void wiznet_network_poll(void);
+void wiznet_network_get_status(WiznetNetworkStatus *status);
+void wiznet_network_print_status(void);
+bool wiznet_network_is_ready(void);
+
+/* Powers the PHY down for `seconds` and back up from the poll loop: the
+ * board-side equivalent of pulling the cable, so a soak test can inject a
+ * link outage on a schedule. Non-blocking. 0 cancels one in progress. */
+void wiznet_network_link_drop(uint32_t seconds);
+
+#endif /* WIZNET_NETWORK_H */

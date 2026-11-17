@@ -1,0 +1,304 @@
+/*
+ * Copyright (c) 2026 WIZnet Co., Ltd.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "wiznet_network.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#include "opcua_settings.h"
+#include "pico/stdlib.h"
+#include "port_common.h"
+#include "wizchip_conf.h"
+#include "wizchip_qspi_pio.h"
+#include "wizchip_spi.h"
+
+#define LINK_POLL_INTERVAL_MS 1000u
+
+static wiz_NetInfo s_net_info = {
+    .mac = {0x00, 0x08, 0xDC, 0x12, 0x34, 0x56},
+    .ip = {192, 168, 11, 2},
+    .sn = {255, 255, 255, 0},
+    .gw = {192, 168, 11, 1},
+    .dns = {8, 8, 8, 8},
+#if _WIZCHIP_ > W5500
+    .lla = {
+        0xfe, 0x80, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x02, 0x08, 0xdc, 0xff,
+        0xfe, 0x57, 0x57, 0x25
+    },
+    .gua = {
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    },
+    .sn6 = {
+        0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    },
+    .gw6 = {
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00
+    },
+    .dns6 = {
+        0x20, 0x01, 0x48, 0x60,
+        0x48, 0x60, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x88, 0x88
+    },
+    .ipmode = NETINFO_STATIC_ALL
+#else
+    .dhcp = NETINFO_STATIC
+#endif
+};
+
+static WiznetNetworkStatus s_status;
+static uint32_t s_last_link_poll_ms;
+static uint32_t s_link_drop_until_ms;     /* 0 = PHY not held down */
+
+static const char *state_name(WiznetNetworkState state) {
+    switch(state) {
+    case WIZNET_NETWORK_STATE_DISABLED:
+        return "DISABLED";
+    case WIZNET_NETWORK_STATE_INIT:
+        return "INIT";
+    case WIZNET_NETWORK_STATE_LINK_DOWN:
+        return "LINK_DOWN";
+    case WIZNET_NETWORK_STATE_LINK_UP:
+        return "LINK_UP";
+    case WIZNET_NETWORK_STATE_ERROR:
+        return "ERROR";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void copy_net_info_to_status(void) {
+    memcpy(s_status.mac, s_net_info.mac, sizeof(s_status.mac));
+    memcpy(s_status.ip, s_net_info.ip, sizeof(s_status.ip));
+    memcpy(s_status.subnet, s_net_info.sn, sizeof(s_status.subnet));
+    memcpy(s_status.gateway, s_net_info.gw, sizeof(s_status.gateway));
+}
+
+static void update_link_status(bool print_on_change) {
+    bool old_link_up = s_status.link_up;
+    /* PHYSR, not wizphy_getphylink(): in MII mode that reads BMSR over MDIO,
+     * and ioLibrary's MDIO access spins on PHYACR with no timeout. See
+     * phy_power() for the hang this caused. */
+#if _WIZCHIP_ > W5500
+    uint8_t link = (getPHYSR() & PHYSR_LNK) ? PHY_LINK_ON : PHY_LINK_OFF;
+#else
+    uint8_t link = (getPHYCFGR() & PHYCFGR_LNK_ON) ? PHY_LINK_ON : PHY_LINK_OFF;
+#endif
+
+    s_status.link_up = (link == PHY_LINK_ON);
+    s_status.state = s_status.link_up ?
+        WIZNET_NETWORK_STATE_LINK_UP : WIZNET_NETWORK_STATE_LINK_DOWN;
+    s_status.status_text = s_status.link_up ?
+        "WIZnet network configured; PHY link is up" :
+        "WIZnet network configured; PHY link is down";
+
+    if(print_on_change && old_link_up != s_status.link_up) {
+        printf("[WIZnet] PHY link %s\r\n", s_status.link_up ? "up" : "down");
+    }
+}
+
+static void print_phy_details(void) {
+    wiz_PhyConf phyconf;
+
+    if(!s_status.link_up)
+        return;
+
+    wizphy_getphyconf(&phyconf);
+    printf("[WIZnet] PHY speed=%sMbps duplex=%s\r\n",
+           phyconf.speed == PHY_SPEED_100 ? "100" : "10",
+           phyconf.duplex == PHY_DUPLEX_FULL ? "full" : "half");
+}
+
+static int wiznet_chip_initialize_nonblocking(void) {
+#if _WIZCHIP_ == W6300
+    extern wiznet_spi_handle_t spi_handle;
+    /* 소켓 예산 — W6300 하드웨어 소켓 8개를 이렇게 나눈다.
+     *   0-3 OPC UA 4KB x4 (균일 필수: 칩이 빈 소켓을 임의로 고른다)
+     *   4   HTTP 설정 8KB   5 DHCP 2KB   6 DNS/SNTP 2KB   7 미사용
+     * 합계 TX/RX 각 28KB, 4KB 미할당.
+     *
+     * 2의 거듭제곱만 쓴다. 6KB 를 시험했더니 데이터는 맞게 오지만
+     * Sn_RX_RSR 이 1 로 고정되어 폴링당 1바이트씩만 읽힌다 (약 800 B/s).
+     * 데이터시트 DS_V102E p.68 의 경고가 정확했다. 2026-09-03 실기 확인. */
+    uint8_t memsize[2][8] = {
+        {4, 4, 4, 4, 8, 2, 2, 0},
+        {4, 4, 4, 4, 8, 2, 2, 0}
+    };
+
+    /*
+     * This mirrors the chip-specific path inside wizchip_initialize(), but skips its
+     * infinite PHY-link wait so USB CDC commands still work with no LAN cable.
+     */
+    (*spi_handle)->frame_end();
+    reg_wizchip_qspi_cbfunc((*spi_handle)->read_byte, (*spi_handle)->write_byte);
+    reg_wizchip_cs_cbfunc((*spi_handle)->frame_start, (*spi_handle)->frame_end);
+
+    if(ctlwizchip(CW_INIT_WIZCHIP, (void *)memsize) == -1) {
+        printf("[WIZnet] WIZnet chip initialization failed\r\n");
+        return -1;
+    }
+
+    return 0;
+#elif defined(USE_PIO) && _WIZCHIP_ == W5500
+    extern wiznet_spi_handle_t spi_handle;
+    /* W55RP20: the same, because wizchip_initialize() waits for the link
+     * forever here too. 2 KB per socket is the most eight sockets can have. */
+    uint8_t memsize[2][8] = {
+        {2, 2, 2, 2, 2, 2, 2, 2},
+        {2, 2, 2, 2, 2, 2, 2, 2}
+    };
+
+    (*spi_handle)->frame_end();
+    reg_wizchip_spi_cbfunc((*spi_handle)->read_byte, (*spi_handle)->write_byte);
+    reg_wizchip_spiburst_cbfunc((*spi_handle)->read_buffer, (*spi_handle)->write_buffer);
+    reg_wizchip_cs_cbfunc((*spi_handle)->frame_start, (*spi_handle)->frame_end);
+
+    if(ctlwizchip(CW_INIT_WIZCHIP, (void *)memsize) == -1) {
+        printf("[WIZnet] WIZnet chip initialization failed\r\n");
+        return -1;
+    }
+
+    return 0;
+#else
+    wizchip_initialize();
+    return 0;
+#endif
+}
+
+int wiznet_network_init(const opcua_settings_t *cfg) {
+    memset(&s_status, 0, sizeof(s_status));
+
+    /* Apply configured IPv4 addressing over the compiled default. IPv6
+     * link-local defaults (W6300) are left as-is. DHCP is deferred to A-4;
+     * cfg->use_dhcp is not yet honored — static path only. */
+    if(cfg) {
+        memcpy(s_net_info.ip, cfg->ip, 4);
+        memcpy(s_net_info.gw, cfg->gw, 4);
+        memcpy(s_net_info.sn, cfg->sn, 4);
+        memcpy(s_net_info.dns, cfg->dns, 4);
+    }
+#if OPCUA_NET_TEST_HOST
+    s_net_info.mac[5] = OPCUA_NET_TEST_HOST;    /* the default MAC is shared */
+#endif
+
+    copy_net_info_to_status();
+    s_status.state = WIZNET_NETWORK_STATE_INIT;
+    s_status.status_text = "initializing WIZnet network";
+
+    printf("[WIZnet] initializing WIZnet network\r\n");
+
+    wizchip_spi_initialize();
+    wizchip_cris_initialize();
+    wizchip_reset();
+    if(wiznet_chip_initialize_nonblocking() != 0) {
+        s_status.state = WIZNET_NETWORK_STATE_ERROR;
+        s_status.status_text = "WIZnet chip initialization failed";
+        wiznet_network_print_status();
+        return -1;
+    }
+    wizchip_check();
+
+    network_initialize(s_net_info);
+    print_network_information(s_net_info);
+
+    s_status.initialized = true;
+    copy_net_info_to_status();
+    update_link_status(false);
+    print_phy_details();
+    wiznet_network_print_status();
+
+    return 0;
+}
+
+/* Power-down goes through PHYCR1, never MDIO. ioLibrary's MDIO access
+ * (wiz_mdio_read/write in w6300.c) spins on PHYACR with no timeout, and the
+ * first LINKDOWN, done with wizphy_setphypmode() over MDIO, stopped the loop
+ * before the next link poll could print and the watchdog reset the board 8 s
+ * later - most likely the MDIO read of BMSR never completing with the PHY
+ * powered down. */
+static void phy_power(bool down) {
+#if _WIZCHIP_ > W5500
+    PHYUNLOCK();
+    uint8_t v = getPHYCR1();
+    setPHYCR1(down ? (uint8_t)(v | PHYCR1_PWDN) : (uint8_t)(v & ~PHYCR1_PWDN));
+    PHYLOCK();
+#else
+    /* W5500 core: no MDIO. A new operating mode takes effect on a PHY reset,
+     * bit 7 low then high. */
+    uint8_t v = (uint8_t)(PHYCFGR_OPMD |
+                          (down ? PHYCFGR_OPMDC_PDOWN : PHYCFGR_OPMDC_ALLA));
+    setPHYCFGR((uint8_t)(v & PHYCFGR_RST));
+    setPHYCFGR((uint8_t)(v | (uint8_t)~PHYCFGR_RST));
+#endif
+}
+
+void wiznet_network_link_drop(uint32_t seconds) {
+    if(seconds == 0u) {
+        s_link_drop_until_ms = 1u;        /* release on the next poll */
+        return;
+    }
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    phy_power(true);
+    s_link_drop_until_ms = (now + seconds * 1000u) | 1u;
+    printf("[WIZnet] PHY powered down for %lus (LINKDOWN)\r\n",
+           (unsigned long)seconds);
+}
+
+void wiznet_network_poll(void) {
+    if(!s_status.initialized)
+        return;
+
+    uint32_t now = to_ms_since_boot(get_absolute_time());
+    if(s_link_drop_until_ms != 0u &&
+       (int32_t)(now - s_link_drop_until_ms) >= 0) {
+        s_link_drop_until_ms = 0u;
+        phy_power(false);
+        printf("[WIZnet] PHY powered up (LINKDOWN over)\r\n");
+    }
+    if((uint32_t)(now - s_last_link_poll_ms) < LINK_POLL_INTERVAL_MS)
+        return;
+
+    s_last_link_poll_ms = now;
+    update_link_status(true);
+}
+
+void wiznet_network_get_status(WiznetNetworkStatus *status) {
+    if(status)
+        *status = s_status;
+}
+
+void wiznet_network_print_status(void) {
+    printf("[WIZnet] state=%s link=%s ip=%u.%u.%u.%u port=%u\r\n",
+           state_name(s_status.state),
+           s_status.link_up ? "up" : "down",
+           s_status.ip[0], s_status.ip[1],
+           s_status.ip[2], s_status.ip[3],
+           (unsigned)WIZNET_OPCUA_TCP_PORT);
+    printf("[WIZnet] mac=%02X:%02X:%02X:%02X:%02X:%02X gw=%u.%u.%u.%u sn=%u.%u.%u.%u\r\n",
+           s_status.mac[0], s_status.mac[1], s_status.mac[2],
+           s_status.mac[3], s_status.mac[4], s_status.mac[5],
+           s_status.gateway[0], s_status.gateway[1],
+           s_status.gateway[2], s_status.gateway[3],
+           s_status.subnet[0], s_status.subnet[1],
+           s_status.subnet[2], s_status.subnet[3]);
+    printf("[WIZnet] %s\r\n",
+           s_status.status_text ? s_status.status_text : "(no status)");
+}
+
+bool wiznet_network_is_ready(void) {
+    return s_status.initialized && s_status.link_up;
+}
