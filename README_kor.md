@@ -1,6 +1,6 @@
 # WIZnet OPC UA Node
 
-Firmware 1.0.0 · [English](README.md)
+Firmware 1.0.1 · [English](README.md)
 
 WIZnet Pico 보드를 OPC UA 서버 노드로 만듭니다. UART나 USB 콘솔로 들어온 값을
 OPC UA 변수로 제공하므로, SCADA·HMI 같은 OPC UA 클라이언트가 이더넷으로 값을 읽을 수 있습니다.
@@ -76,6 +76,8 @@ UART 어댑터는 필요 없습니다. 빠른 시작에서는 USB 콘솔로 값�
 ## 1단계: 펌웨어 올리기
 
 1. [Releases](https://github.com/theoim/WIZnet_OPCUA_Node/releases)에서 보드에 맞는 `.uf2` 파일을 받습니다.
+   Releases에는 시험을 마친 두 보드(W6300-EVB-Pico2, W55RP20-EVB-Pico)의 파일만 있습니다.
+   표의 다른 보드는 펌웨어를 직접 빌드하세요 — [빌드와 보안](docs/build-and-security_kor.md) 참고.
 2. **BOOTSEL** 버튼을 누른 채 USB 케이블을 꽂습니다. PC에 드라이브가 나타납니다.
 3. `.uf2` 파일을 드라이브에 끌어 놓습니다. 보드가 스스로 다시 시작합니다.
 4. 터미널에서 보드의 COM 포트를 열고 `OPCUA`를 입력합니다. 보드가 다음과 같이 답합니다.

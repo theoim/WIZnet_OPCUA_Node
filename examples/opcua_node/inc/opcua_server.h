@@ -15,7 +15,7 @@
  * configured IP; see opcua_server_init(). */
 #define OPCUA_APPLICATION_URI "urn:WIZnet:opcua-node"
 #define OPCUA_PRODUCT_URI     "urn:WIZnet:RP2350"
-#define OPCUA_FW_VERSION      "1.0.0"
+#define OPCUA_FW_VERSION      "1.0.1"
 
 typedef enum {
     OPCUA_SERVER_STATE_DISABLED = 0,

@@ -85,3 +85,40 @@ Basic256Sha256, so RSA is the policy that matters.
 | Connect | 15–18 ms |
 | Read | p50 1.9 ms, p99 3–5 ms (about 520 reads/s) |
 | 100 monitored items | 1,000 notifications/s, all received |
+
+## 6. Connection churn and the 1.0.1 fix — both boards
+
+2026-11-17, None policy. Three clients in parallel, each connecting, sending
+the OPC UA Hello and closing as soon as the Acknowledge arrives, 200 times in a
+row; repeated 14 times.
+
+| Board | Firmware | Connects | Reset by the board |
+|---|---|---|---|
+| W6300-EVB-Pico2 | 1.0.0 | 8,400 | **4** |
+| W6300-EVB-Pico2 | 1.0.1 | 9,000 | **0** |
+| W55RP20-EVB-Pico | 1.0.1 | 8,400 | **0** |
+
+**What:** in 1.0.0, about one connect in 2,000 was reset right after it was
+accepted. A client sees the connect fail and has to try again.
+
+**Why:** after a connection closes, the board puts the socket back into
+LISTEN (waiting for a connection). If a client's SYN (connect request) arrives
+in that same instant, the W6300 has already moved the socket on to SYNRECV.
+The stock ioLibrary `listen()` reads the state once, sees "not LISTEN", and
+closes the socket, so the client gets a reset (ioLibrary issue #127).
+
+**What changed in 1.0.1:** the event loop arms listeners with its own
+`wiz_listen()` (`port/open62541/open62541_wiznet_eventloop.c`), which counts
+SYNRECV and ESTABLISHED as success and never closes the socket. Clients that
+keep one session open, as most OPC UA clients do, rarely hit this; tools that
+reconnect often hit it more.
+
+8-minute regression with the fix: about 10 `$DATA` lines/s on the USB console,
+two clients subscribed to Channel_1, and one more client connecting, reading
+and disconnecting every 60 s (8 times). "Reboots" counts new reboots during
+the run:
+
+| Board | Values sent = last read | Longest gap | Reconnects | Free heap, start → end | Reboots |
+|---|---|---|---|---|---|
+| W6300-EVB-Pico2 | 4,774 = 4,774 | 0.21 s | 8 / 8 | 366,592 → 366,728 B | 0 |
+| W55RP20-EVB-Pico | 4,765 = 4,765 | 0.2 s | 8 / 8 | 117,104 → 117,304 B | 0 |

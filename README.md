@@ -1,6 +1,6 @@
 # WIZnet OPC UA Node
 
-Firmware 1.0.0 · [한국어](README_kor.md)
+Firmware 1.0.1 · [한국어](README_kor.md)
 
 Turns a WIZnet Pico board into an OPC UA server node. Values that arrive over
 UART or the USB console are published as OPC UA variables, so a SCADA system,
@@ -82,6 +82,9 @@ No UART adapter is needed: the quick start sends values over the USB console.
 
 1. Download the `.uf2` file for your board from
    [Releases](https://github.com/theoim/WIZnet_OPCUA_Node/releases).
+   Releases carry files for the two tested boards, W6300-EVB-Pico2 and
+   W55RP20-EVB-Pico. For the other boards in the table, build the firmware
+   yourself — see [Build and security](docs/build-and-security.md).
 2. Hold the **BOOTSEL** button and plug in the USB cable. A drive appears on the PC.
 3. Drag the `.uf2` file onto the drive. The board restarts by itself.
 4. Open the board's COM port in the terminal and type `OPCUA`. The board answers:
