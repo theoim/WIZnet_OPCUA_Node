@@ -1068,6 +1068,25 @@ static void wiz_process_pending_listen_close(WizTcpConnectionManager *tcp) {
         close(WIZ_SOCKET_OF(i));
 }
 
+/* Arm a listener. The stock ioLibrary listen() reads Sn_SR once after the
+ * LISTEN command and, if a client's SYN has already moved the socket on to
+ * SYNRECV or ESTABLISHED, calls close() - the client gets a reset for a
+ * listener that was working (ioLibrary issue #127). Found 2026-11-17 in the
+ * camera firmware built on the same ioLibrary, where it reset about one
+ * connection in a few dozen. Here those two states count as success, and a
+ * failure leaves the socket alone: the next poll looks again. */
+static int8_t wiz_listen(uint8_t sock) {
+    setSn_CR(sock, Sn_CR_LISTEN);
+    for(uint32_t spin = 200000u; getSn_CR(sock) && spin; spin--) {
+    }
+    for(uint32_t spin = 2000u; spin; spin--) {
+        uint8_t sr = getSn_SR(sock);
+        if(sr == SOCK_LISTEN || sr == SOCK_SYNRECV || sr == SOCK_ESTABLISHED)
+            return SOCK_OK;
+    }
+    return SOCKERR_SOCKCLOSED;
+}
+
 static void wiz_open_listen_socket(WizTcpConnectionManager *tcp, unsigned idx) {
     uint8_t sock = WIZ_SOCKET_OF(idx);
     uint8_t sr = getSn_SR(sock);
@@ -1083,7 +1102,7 @@ static void wiz_open_listen_socket(WizTcpConnectionManager *tcp, unsigned idx) {
 
     case SOCK_INIT:
         wiz_trace(WIZ_TR_OPEN, WIZ_TR_SOCK(sock, sr));
-        if(listen(sock) == SOCK_OK)
+        if(wiz_listen(sock) == SOCK_OK)
             wiz_signal_listen(tcp);
         break;
 
