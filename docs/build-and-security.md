@@ -105,3 +105,28 @@ Basic256Sha256: it is the policy common OPC UA clients support.
 > `flash_nuke.uf2`
 > ([how](https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html#resetting-flash-memory)),
 > then flash the new image.
+
+## Rebuild a release image
+
+The `.uf2` files on the Releases page can be rebuilt bit for bit. Check out
+the release tag and set `SOURCE_DATE_EPOCH` to the tag's commit time:
+
+```bash
+git clone --recursive --branch v1.0.1 https://github.com/theoim/WIZnet_OPCUA_Node.git
+cd WIZnet_OPCUA_Node
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+cmake -S . -B build -G "MinGW Makefiles" -DBOARD_NAME=W6300_EVB_PICO2
+cmake --build build --target opcua_node
+sha256sum build/examples/opcua_node/opcua_node.uf2
+```
+
+**What it is:** the image carries two stamps the board prints at boot — the
+version from `git describe` and the build time.
+
+**Why the variable:** the build time is different on every build, so without
+`SOURCE_DATE_EPOCH` the checksum never matches even when the code is the same.
+CMake uses the variable instead of the clock.
+
+**So:** with it, the checksum matches `SHA256SUMS` on the release. For 1.0.1
+this was checked with clean builds in directories of different path length
+(W6300-EVB-Pico2 three times, W55RP20-EVB-Pico twice), on Windows 11 with the tools listed in Step 1.

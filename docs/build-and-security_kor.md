@@ -99,3 +99,27 @@ Linux·macOS에서는 `-G "Unix Makefiles"`를 쓰거나 `-G`를 빼면 됩니�
 > 저장됐다면 새 기본 주소가 쓰이지 않습니다. 이때는 Raspberry Pi의 `flash_nuke.uf2`로 플래시를
 > 먼저 지우고([방법](https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html#resetting-flash-memory)),
 > 새 이미지를 올립니다.
+
+## 릴리스 이미지 다시 빌드하기
+
+Releases 페이지의 `.uf2` 파일은 바이트 단위까지 같게 다시 빌드할 수 있습니다. 릴리스
+태그를 받고 `SOURCE_DATE_EPOCH`를 태그의 커밋 시각으로 정합니다.
+
+```bash
+git clone --recursive --branch v1.0.1 https://github.com/theoim/WIZnet_OPCUA_Node.git
+cd WIZnet_OPCUA_Node
+export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+cmake -S . -B build -G "MinGW Makefiles" -DBOARD_NAME=W6300_EVB_PICO2
+cmake --build build --target opcua_node
+sha256sum build/examples/opcua_node/opcua_node.uf2
+```
+
+**무엇인가:** 이미지에는 보드가 부팅 때 출력하는 표식 두 개가 들어갑니다. `git describe`의
+버전과 빌드 시각입니다.
+
+**왜 이 변수가 필요한가:** 빌드 시각은 빌드할 때마다 달라서, 코드가 같아도
+`SOURCE_DATE_EPOCH` 없이는 체크섬이 맞지 않습니다. 이 변수가 있으면 CMake가 현재 시각
+대신 이 값을 씁니다.
+
+**그래서:** 이 변수를 정하면 체크섬이 릴리스의 `SHA256SUMS`와 같아집니다. 1.0.1은
+경로 길이가 다른 디렉터리에서 깨끗하게 빌드해 확인했습니다(W6300-EVB-Pico2 3회, W55RP20-EVB-Pico 2회)(Windows 11, 1단계의 도구).

@@ -234,6 +234,9 @@ with `$DATA:` and ends with CR or LF.
 | Any client certificate is accepted | The connection is encrypted, but the server has no trust list to check clients against. | Keep the node on a network you control. |
 | Security builds embed a test key | The private key is inside the firmware image, so anyone with the `.uf2` file has the key. | Generate your own certificate for each installation. |
 | Fixed IP, no DHCP | The address is a firmware default. | Set the PC to `192.168.11.x`, or change the address in source and rebuild. |
+| Reduced OPC UA feature set | The server is cut to fit the RP2350's memory: no PubSub, Historizing, Events or Alarms & Conditions, and a minimal Namespace 0. Clients find the server with GetEndpoints, but it does not register with a Local Discovery Server or answer multicast discovery. | Reading values and subscriptions (monitored items) are supported. If you need the missing services, this node is not the right fit. |
+| Tested clients | Tested with UaExpert and the Python `asyncua` library only. Commercial SCADA systems and PLC clients have not been tested. | Test with your own client before relying on it. Reports are welcome. |
+| No certification | The server has not been through the OPC Foundation Compliance Test Tool (CTT) or a profile certification. | Treat it as a reference design, not a certified product. |
 
 ## Going further
 
